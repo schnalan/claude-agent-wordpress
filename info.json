@@ -5,7 +5,7 @@
     "author_profile": "https://github.com/schnalan",
     "requires": "5.8",
     "tested": "6.4",
-    "download_url": "https://github.com/YOUR-USERNAME/claude-wordpress-agent/archive/refs/heads/main.zip",
+    "download_url": "https://github.com/schnalan/claude-wordpress-agent/archive/refs/heads/main.zip",
     "sections": {
         "description": "Advanced autonomous AI agent powered by Claude with learning capabilities, workflows, and intelligent automation.",
         "installation": "1. Upload the plugin files to /wp-content/plugins/claude-agent/\n2. Activate the plugin through the 'Plugins' menu\n3. Configure your Anthropic API key in Settings",
@@ -16,7 +16,3 @@
         "high": "https://via.placeholder.com/1544x500.png?text=Claude+AI+Agent"
     }
 }
-
----
-
-⚠️ IMPORTANT: Replace YOUR-USERNAME with your actual GitHub username!
