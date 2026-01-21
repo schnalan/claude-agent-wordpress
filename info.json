@@ -1,0 +1,21 @@
+{
+    "name": "Claude AI Agent for WordPress",
+    "version": "2.0.1",
+    "author": "Alan Sarver",
+    "author_profile": "https://github.com/schnalan",
+    "requires": "5.8",
+    "tested": "6.4",
+    "download_url": "https://github.com/YOUR-USERNAME/claude-wordpress-agent/archive/refs/heads/main.zip",
+    "sections": {
+        "description": "Advanced autonomous AI agent powered by Claude with learning capabilities, workflows, and intelligent automation.",
+        "installation": "1. Upload the plugin files to /wp-content/plugins/claude-agent/\n2. Activate the plugin through the 'Plugins' menu\n3. Configure your Anthropic API key in Settings",
+        "changelog": "<h4>2.0.1</h4><ul><li>Fixed: Changes now actually apply when approved</li><li>Added: Working update_page_content, update_theme_file, and update_custom_css functions</li><li>Improved: Better error messages</li></ul><h4>2.0.0</h4><ul><li>Initial release with autonomous features</li></ul>"
+    },
+    "banners": {
+        "low": "https://via.placeholder.com/772x250.png?text=Claude+AI+Agent",
+        "high": "https://via.placeholder.com/1544x500.png?text=Claude+AI+Agent"
+    }
+}
+```
+
+**Important:** Replace `YOUR-USERNAME` with your actual GitHub username!
