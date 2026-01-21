@@ -61,7 +61,7 @@ An advanced autonomous AI agent that integrates Anthropic's Claude AI directly i
 
 ### Automatic Installation (WordPress Admin)
 
-1. Download the [latest release](https://github.com/YOUR-USERNAME/claude-wordpress-agent/releases)
+1. Download the [latest release](https://github.com/schnalan/claude-wordpress-agent/releases)
 2. In WordPress admin, go to **Plugins → Add New → Upload Plugin**
 3. Choose the downloaded ZIP file
 4. Click **Install Now**
@@ -216,7 +216,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## 🐛 Bug Reports
 
-If you find a bug, please [open an issue](https://github.com/YOUR-USERNAME/claude-wordpress-agent/issues) with:
+If you find a bug, please [open an issue](https://github.com/schnalan/claude-wordpress-agent/issues) with:
 - Description of the bug
 - Steps to reproduce
 - Expected behavior
@@ -228,8 +228,8 @@ If you find a bug, please [open an issue](https://github.com/YOUR-USERNAME/claud
 ## 📞 Support
 
 - **Documentation:** This README
-- **Issues:** [GitHub Issues](https://github.com/YOUR-USERNAME/claude-wordpress-agent/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/YOUR-USERNAME/claude-wordpress-agent/discussions)
+- **Issues:** [GitHub Issues](https://github.com/schnalan/claude-wordpress-agent/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/schnalan/claude-wordpress-agent/discussions)
 
 ## ⚖️ License
 
