@@ -1,0 +1,91 @@
+# WordPress Core Files
+/wp-admin/
+/wp-includes/
+/wp-content/uploads/
+/wp-content/cache/
+wp-config.php
+wp-config-sample.php
+wp-*.php
+xmlrpc.php
+readme.html
+license.txt
+
+# WordPress Specific
+*.log
+.htaccess
+sitemap.xml
+sitemap.xml.gz
+
+# Plugin Specific
+*.bak
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Development
+node_modules/
+.sass-cache/
+.env
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Composer
+/vendor/
+composer.phar
+composer.lock
+
+# NPM
+package-lock.json
+yarn.lock
+
+# Build files
+/build/
+/dist/
+*.min.js
+*.min.css
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# OS Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE Files
+.project
+.settings/
+.buildpath
+.idea/
+*.iml
+.vscode/
+*.code-workspace
+
+# Backup files
+*.backup
+*.old
+*.orig
+*-old
+*-backup
+
+# Database dumps
+*.sql
+*.sql.gz
+*.sql.zip
+
+# Sensitive data
+.env
+.env.local
+.env.*.local
+credentials.json
+secrets.json
