@@ -1,0 +1,22 @@
+{
+  "name": "Claude SEO & Performance Optimizer",
+  "version": "1.0.0",
+  "description": "AI-powered SEO optimization and performance improvements using Claude API",
+  "author": "Your Name",
+  "homepage": "https://github.com/YOUR-USERNAME/claude-seo-optimizer",
+  "requires_wordpress": "5.0",
+  "requires_php": "7.4",
+  "license": "GPL-2.0-or-later",
+  "features": [
+    "AI-powered SEO analysis",
+    "Automatic meta description generation",
+    "Focus keyword optimization",
+    "Internal linking suggestions",
+    "Performance analysis",
+    "Image optimization detection",
+    "Database cleanup recommendations",
+    "Automatic performance optimizations"
+  ],
+  "api_required": true,
+  "api_provider": "Anthropic (Claude)"
+}
