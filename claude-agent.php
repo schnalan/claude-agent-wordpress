@@ -477,7 +477,7 @@ class Claude_Agent_Plugin {
         }
         
         $page_id = intval($_POST['page_id']); 
-page=getpost(page=getpost(page_id);
+$page = get_post($page_id);
 if (!$page) {
         wp_send_json_error('Page not found');
         return;
