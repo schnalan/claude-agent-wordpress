@@ -1,32 +1,26 @@
+cd /home/claude && cat > seo-performance-agent.php << 'EOF'
 <?php
 /**
- * Plugin Name: Claude SEO & Performance Optimizer
- * Plugin URI: https://github.com/YOUR-USERNAME/claude-seo-optimizer
- * Description: AI-powered SEO optimization and performance improvements using Claude API
+ * Plugin Name: Claude SEO & Performance Agent
+ * Plugin URI: https://github.com/yourusername/claude-seo-agent
+ * Description: AI-powered SEO analysis and performance optimization using Claude API
  * Version: 1.0.0
  * Author: Your Name
- * Author URI: https://yoursite.com
  * License: GPL v2 or later
- * Text Domain: claude-seo
+ * Text Domain: claude-seo-agent
  */
 
-// Exit if accessed directly
 if (!defined('ABSPATH')) {
     exit;
 }
 
-// Define plugin constants
-define('CLAUDE_SEO_VERSION', '1.0.0');
-define('CLAUDE_SEO_PLUGIN_DIR', plugin_dir_path(__FILE__));
-define('CLAUDE_SEO_PLUGIN_URL', plugin_dir_url(__FILE__));
-
-class Claude_SEO_Optimizer {
+class Claude_SEO_Performance_Agent {
     
     private static $instance = null;
-    private $api_key;
+    private $api_key = '';
     
     public static function get_instance() {
-        if (null === self::$instance) {
+        if (self::$instance === null) {
             self::$instance = new self();
         }
         return self::$instance;
@@ -35,39 +29,34 @@ class Claude_SEO_Optimizer {
     private function __construct() {
         $this->api_key = get_option('claude_seo_api_key', '');
         
-        // Admin hooks
+        // Admin menu
         add_action('admin_menu', array($this, 'add_admin_menu'));
         add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_assets'));
         
         // AJAX handlers
-        add_action('wp_ajax_claude_seo_analyze', array($this, 'ajax_analyze_page'));
-        add_action('wp_ajax_claude_seo_generate_meta', array($this, 'ajax_generate_meta'));
-        add_action('wp_ajax_claude_seo_analyze_performance', array($this, 'ajax_analyze_performance'));
-        add_action('wp_ajax_claude_seo_save_settings', array($this, 'ajax_save_settings'));
+        add_action('wp_ajax_claude_analyze_page', array($this, 'ajax_analyze_page'));
+        add_action('wp_ajax_claude_optimize_images', array($this, 'ajax_optimize_images'));
+        add_action('wp_ajax_claude_generate_meta', array($this, 'ajax_generate_meta'));
+        add_action('wp_ajax_claude_save_settings', array($this, 'ajax_save_settings'));
         
-        // Add meta box to posts and pages
-        add_action('add_meta_boxes', array($this, 'add_seo_meta_box'));
+        // Add meta boxes to post editor
+        add_action('add_meta_boxes', array($this, 'add_meta_boxes'));
         add_action('save_post', array($this, 'save_meta_box_data'));
-        
-        // Performance optimizations (if enabled)
-        if (get_option('claude_seo_auto_optimize', false)) {
-            $this->enable_performance_optimizations();
-        }
     }
     
     public function add_admin_menu() {
         add_menu_page(
-            'Claude SEO Optimizer',
-            'Claude SEO',
+            'Claude SEO Agent',
+            'SEO Agent',
             'manage_options',
-            'claude-seo',
-            array($this, 'render_main_page'),
+            'claude-seo-agent',
+            array($this, 'render_dashboard'),
             'dashicons-search',
             30
         );
         
         add_submenu_page(
-            'claude-seo',
+            'claude-seo-agent',
             'Performance',
             'Performance',
             'manage_options',
@@ -76,7 +65,7 @@ class Claude_SEO_Optimizer {
         );
         
         add_submenu_page(
-            'claude-seo',
+            'claude-seo-agent',
             'Settings',
             'Settings',
             'manage_options',
@@ -90,23 +79,22 @@ class Claude_SEO_Optimizer {
             return;
         }
         
-        wp_enqueue_style('claude-seo-admin', CLAUDE_SEO_PLUGIN_URL . 'assets/admin.css', array(), CLAUDE_SEO_VERSION);
-        wp_enqueue_script('claude-seo-admin', CLAUDE_SEO_PLUGIN_URL . 'assets/admin.js', array('jquery'), CLAUDE_SEO_VERSION, true);
+        wp_enqueue_style('claude-seo-admin', plugins_url('assets/admin.css', __FILE__), array(), '1.0.0');
+        wp_enqueue_script('claude-seo-admin', plugins_url('assets/admin.js', __FILE__), array('jquery'), '1.0.0', true);
         
         wp_localize_script('claude-seo-admin', 'claudeSEO', array(
-            'ajaxurl' => admin_url('admin-ajax.php'),
-            'nonce' => wp_create_nonce('claude_seo_nonce'),
-            'hasApiKey' => !empty($this->api_key)
+            'ajax_url' => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce('claude_seo_nonce')
         ));
     }
     
-    public function add_seo_meta_box() {
+    public function add_meta_boxes() {
         add_meta_box(
-            'claude_seo_meta_box',
+            'claude_seo_assistant',
             'Claude SEO Assistant',
             array($this, 'render_meta_box'),
             array('post', 'page'),
-            'normal',
+            'side',
             'high'
         );
     }
@@ -114,42 +102,19 @@ class Claude_SEO_Optimizer {
     public function render_meta_box($post) {
         wp_nonce_field('claude_seo_meta_box', 'claude_seo_meta_box_nonce');
         
-        $meta_description = get_post_meta($post->ID, '_claude_seo_meta_description', true);
-        $focus_keyword = get_post_meta($post->ID, '_claude_seo_focus_keyword', true);
         $seo_score = get_post_meta($post->ID, '_claude_seo_score', true);
-        ?>
-        <div class="claude-seo-meta-box">
-            <div class="claude-seo-score">
-                <strong>SEO Score:</strong> 
-                <span id="seo-score-display"><?php echo $seo_score ? $seo_score . '/100' : 'Not analyzed'; ?></span>
-                <button type="button" class="button" id="analyze-seo-btn">Analyze with Claude</button>
-            </div>
-            
-            <div class="claude-seo-field">
-                <label for="claude_focus_keyword"><strong>Focus Keyword:</strong></label>
-                <input type="text" id="claude_focus_keyword" name="claude_focus_keyword" 
-                       value="<?php echo esc_attr($focus_keyword); ?>" class="widefat">
-            </div>
-            
-            <div class="claude-seo-field">
-                <label for="claude_meta_description"><strong>Meta Description:</strong></label>
-                <textarea id="claude_meta_description" name="claude_meta_description" 
-                          rows="3" class="widefat"><?php echo esc_textarea($meta_description); ?></textarea>
-                <button type="button" class="button" id="generate-meta-btn">Generate with Claude</button>
-                <span class="description">Characters: <span id="meta-char-count">0</span>/160</span>
-            </div>
-            
-            <div id="seo-suggestions" class="claude-seo-suggestions" style="display:none;">
-                <h4>SEO Suggestions:</h4>
-                <div id="suggestions-content"></div>
-            </div>
-        </div>
-        <?php
+        $last_analysis = get_post_meta($post->ID, '_claude_last_analysis', true);
+        $meta_description = get_post_meta($post->ID, '_claude_meta_description', true);
+        
+        include plugin_dir_path(__FILE__) . 'templates/meta-box.php';
     }
     
     public function save_meta_box_data($post_id) {
-        if (!isset($_POST['claude_seo_meta_box_nonce']) || 
-            !wp_verify_nonce($_POST['claude_seo_meta_box_nonce'], 'claude_seo_meta_box')) {
+        if (!isset($_POST['claude_seo_meta_box_nonce'])) {
+            return;
+        }
+        
+        if (!wp_verify_nonce($_POST['claude_seo_meta_box_nonce'], 'claude_seo_meta_box')) {
             return;
         }
         
@@ -162,19 +127,38 @@ class Claude_SEO_Optimizer {
         }
         
         if (isset($_POST['claude_meta_description'])) {
-            update_post_meta($post_id, '_claude_seo_meta_description', sanitize_textarea_field($_POST['claude_meta_description']));
-        }
-        
-        if (isset($_POST['claude_focus_keyword'])) {
-            update_post_meta($post_id, '_claude_seo_focus_keyword', sanitize_text_field($_POST['claude_focus_keyword']));
+            update_post_meta($post_id, '_claude_meta_description', sanitize_text_field($_POST['claude_meta_description']));
         }
     }
     
+    public function render_dashboard() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Insufficient permissions');
+        }
+        include plugin_dir_path(__FILE__) . 'templates/dashboard.php';
+    }
+    
+    public function render_performance_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Insufficient permissions');
+        }
+        include plugin_dir_path(__FILE__) . 'templates/performance.php';
+    }
+    
+    public function render_settings_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Insufficient permissions');
+        }
+        include plugin_dir_path(__FILE__) . 'templates/settings.php';
+    }
+    
+    // AJAX: Analyze page SEO
     public function ajax_analyze_page() {
         check_ajax_referer('claude_seo_nonce', 'nonce');
         
         if (!current_user_can('edit_posts')) {
             wp_send_json_error('Insufficient permissions');
+            return;
         }
         
         $post_id = intval($_POST['post_id']);
@@ -182,28 +166,26 @@ class Claude_SEO_Optimizer {
         
         if (!$post) {
             wp_send_json_error('Post not found');
+            return;
         }
         
-        if (empty($this->api_key)) {
-            wp_send_json_error('Please configure your Claude API key in settings');
-        }
+        $analysis = $this->analyze_seo($post);
         
-        // Analyze the post content with Claude
-        $analysis = $this->analyze_with_claude($post);
+        // Save analysis results
+        update_post_meta($post_id, '_claude_seo_score', $analysis['score']);
+        update_post_meta($post_id, '_claude_last_analysis', current_time('mysql'));
+        update_post_meta($post_id, '_claude_seo_issues', json_encode($analysis['issues']));
         
-        if ($analysis['success']) {
-            update_post_meta($post_id, '_claude_seo_score', $analysis['score']);
-            wp_send_json_success($analysis);
-        } else {
-            wp_send_json_error($analysis['message']);
-        }
+        wp_send_json_success($analysis);
     }
     
+    // AJAX: Generate meta description
     public function ajax_generate_meta() {
         check_ajax_referer('claude_seo_nonce', 'nonce');
         
         if (!current_user_can('edit_posts')) {
             wp_send_json_error('Insufficient permissions');
+            return;
         }
         
         $post_id = intval($_POST['post_id']);
@@ -211,201 +193,261 @@ class Claude_SEO_Optimizer {
         
         if (!$post) {
             wp_send_json_error('Post not found');
-        }
-        
-        if (empty($this->api_key)) {
-            wp_send_json_error('Please configure your Claude API key in settings');
+            return;
         }
         
         $meta_description = $this->generate_meta_description($post);
         
         if ($meta_description) {
+            update_post_meta($post_id, '_claude_meta_description', $meta_description);
             wp_send_json_success(array('meta_description' => $meta_description));
         } else {
             wp_send_json_error('Failed to generate meta description');
         }
     }
     
-    public function ajax_analyze_performance() {
+    // AJAX: Optimize images
+    public function ajax_optimize_images() {
         check_ajax_referer('claude_seo_nonce', 'nonce');
         
         if (!current_user_can('manage_options')) {
             wp_send_json_error('Insufficient permissions');
+            return;
         }
         
-        $analysis = $this->analyze_site_performance();
-        wp_send_json_success($analysis);
+        $results = $this->analyze_image_optimization();
+        wp_send_json_success($results);
     }
     
+    // AJAX: Save settings
     public function ajax_save_settings() {
         check_ajax_referer('claude_seo_nonce', 'nonce');
         
         if (!current_user_can('manage_options')) {
             wp_send_json_error('Insufficient permissions');
+            return;
         }
         
         $api_key = sanitize_text_field($_POST['api_key']);
-        $auto_optimize = isset($_POST['auto_optimize']) ? true : false;
-        
         update_option('claude_seo_api_key', $api_key);
-        update_option('claude_seo_auto_optimize', $auto_optimize);
         
-        wp_send_json_success('Settings saved successfully');
+        $this->api_key = $api_key;
+        
+        wp_send_json_success('Settings saved');
     }
     
-    private function analyze_with_claude($post) {
+    // Core SEO analysis function
+    private function analyze_seo($post) {
+        $issues = array();
+        $score = 100;
+        
+        // Title analysis
+        $title = $post->post_title;
+        if (strlen($title) < 30) {
+            $issues[] = array('type' => 'warning', 'message' => 'Title is too short (less than 30 characters)');
+            $score -= 10;
+        }
+        if (strlen($title) > 60) {
+            $issues[] = array('type' => 'warning', 'message' => 'Title is too long (more than 60 characters)');
+            $score -= 10;
+        }
+        
+        // Meta description
+        $meta_desc = get_post_meta($post->ID, '_claude_meta_description', true);
+        if (empty($meta_desc)) {
+            $issues[] = array('type' => 'error', 'message' => 'No meta description found');
+            $score -= 15;
+        } elseif (strlen($meta_desc) < 120) {
+            $issues[] = array('type' => 'warning', 'message' => 'Meta description is too short');
+            $score -= 5;
+        } elseif (strlen($meta_desc) > 160) {
+            $issues[] = array('type' => 'warning', 'message' => 'Meta description is too long');
+            $score -= 5;
+        }
+        
+        // Content analysis
         $content = $post->post_content;
-        $title = $post->post_title;
-        $focus_keyword = get_post_meta($post->ID, '_claude_seo_focus_keyword', true);
+        $word_count = str_word_count(strip_tags($content));
         
-        $prompt = "Analyze this WordPress post for SEO optimization. Post title: '$title'. ";
-        if ($focus_keyword) {
-            $prompt .= "Focus keyword: '$focus_keyword'. ";
-        }
-        $prompt .= "Content: " . wp_strip_all_tags($content) . "\n\n";
-        $prompt .= "Provide:\n1. An SEO score (0-100)\n2. Specific actionable suggestions for improvement\n3. Whether the focus keyword is used effectively\n4. Suggestions for internal linking opportunities\n\nFormat your response as JSON with keys: score, suggestions (array), keyword_usage, internal_linking";
-        
-        $response = $this->call_claude_api($prompt);
-        
-        if (!$response) {
-            return array('success' => false, 'message' => 'Failed to connect to Claude API');
+        if ($word_count < 300) {
+            $issues[] = array('type' => 'warning', 'message' => 'Content is thin (less than 300 words)');
+            $score -= 15;
         }
         
-        // Parse Claude's response
-        try {
-            $data = json_decode($response, true);
-            return array(
-                'success' => true,
-                'score' => $data['score'],
-                'suggestions' => $data['suggestions'],
-                'keyword_usage' => $data['keyword_usage'],
-                'internal_linking' => $data['internal_linking']
-            );
-        } catch (Exception $e) {
-            return array('success' => false, 'message' => 'Failed to parse AI response');
+        // Heading structure
+        if (!preg_match('/<h1/', $content) && !preg_match('/<h2/', $content)) {
+            $issues[] = array('type' => 'warning', 'message' => 'No headings (H1/H2) found in content');
+            $score -= 10;
         }
-    }
-    
-    private function generate_meta_description($post) {
-        $content = wp_strip_all_tags($post->post_content);
-        $title = $post->post_title;
-        $focus_keyword = get_post_meta($post->ID, '_claude_seo_focus_keyword', true);
         
-        $prompt = "Write a compelling SEO meta description (150-160 characters) for this post.\n";
-        $prompt .= "Title: $title\n";
-        if ($focus_keyword) {
-            $prompt .= "Focus keyword: $focus_keyword\n";
+        // Images without alt text
+        preg_match_all('/<img[^>]+>/', $content, $images);
+        $images_without_alt = 0;
+        foreach ($images[0] as $img) {
+            if (!preg_match('/alt=["\']([^"\']+)["\']/', $img)) {
+                $images_without_alt++;
+            }
         }
-        $prompt .= "Content summary: " . substr($content, 0, 500) . "\n\n";
-        $prompt .= "Return ONLY the meta description text, nothing else.";
+        if ($images_without_alt > 0) {
+            $issues[] = array('type' => 'warning', 'message' => "$images_without_alt images missing alt text");
+            $score -= ($images_without_alt * 5);
+        }
         
-        return $this->call_claude_api($prompt);
-    }
-    
-    private function analyze_site_performance() {
-        global $wpdb;
+        // Internal links
+        preg_match_all('/<a[^>]+href=["\']' . preg_quote(site_url(), '/') . '[^"\']*["\'][^>]*>/', $content, $internal_links);
+        if (count($internal_links[0]) === 0) {
+            $issues[] = array('type' => 'info', 'message' => 'No internal links found');
+            $score -= 5;
+        }
         
-        $analysis = array(
-            'total_posts' => wp_count_posts()->publish,
-            'total_pages' => wp_count_posts('page')->publish,
-            'database_size' => $this->get_database_size(),
-            'plugins_count' => count(get_option('active_plugins')),
-            'theme' => wp_get_theme()->get('Name'),
-            'recommendations' => array()
+        $score = max(0, min(100, $score));
+        
+        return array(
+            'score' => $score,
+            'issues' => $issues,
+            'word_count' => $word_count,
+            'readability' => $this->calculate_readability($content)
         );
-        
-        // Check for common performance issues
-        if ($analysis['plugins_count'] > 20) {
-            $analysis['recommendations'][] = "You have {$analysis['plugins_count']} active plugins. Consider deactivating unused plugins to improve performance.";
-        }
-        
-        // Check image optimization
-        $unoptimized_images = $this->count_unoptimized_images();
-        if ($unoptimized_images > 0) {
-            $analysis['recommendations'][] = "$unoptimized_images images could benefit from optimization. Consider using an image optimization plugin.";
-        }
-        
-        // Check for old revisions
-        $revision_count = $wpdb->get_var("SELECT COUNT(*) FROM $wpdb->posts WHERE post_type = 'revision'");
-        if ($revision_count > 100) {
-            $analysis['recommendations'][] = "You have $revision_count post revisions. Cleaning these up can reduce database size.";
-        }
-        
-        // Check caching
-        if (!defined('WP_CACHE') || !WP_CACHE) {
-            $analysis['recommendations'][] = "Object caching is not enabled. Consider enabling it for better performance.";
-        }
-        
-        return $analysis;
     }
     
-    private function get_database_size() {
-        global $wpdb;
-        $size = $wpdb->get_var("SELECT SUM(data_length + index_length) FROM information_schema.TABLES WHERE table_schema = '{$wpdb->dbname}'");
-        return $this->format_bytes($size);
+    private function calculate_readability($content) {
+        $text = strip_tags($content);
+        $sentences = preg_split('/[.!?]+/', $text, -1, PREG_SPLIT_NO_EMPTY);
+        $words = str_word_count($text);
+        $syllables = $this->count_syllables($text);
+        
+        if (count($sentences) === 0 || $words === 0) {
+            return 0;
+        }
+        
+        // Flesch Reading Ease
+        $avg_words_per_sentence = $words / count($sentences);
+        $avg_syllables_per_word = $syllables / $words;
+        
+        $score = 206.835 - (1.015 * $avg_words_per_sentence) - (84.6 * $avg_syllables_per_word);
+        
+        return round(max(0, min(100, $score)), 1);
     }
     
-    private function count_unoptimized_images() {
+    private function count_syllables($text) {
+        $words = str_word_count(strtolower($text), 1);
+        $syllables = 0;
+        
+        foreach ($words as $word) {
+            $syllables += max(1, preg_match_all('/[aeiouy]+/', $word));
+        }
+        
+        return $syllables;
+    }
+    
+    // Generate meta description using Claude API
+    private function generate_meta_description($post) {
+        if (empty($this->api_key)) {
+            return false;
+        }
+        
+        $content = wp_strip_all_tags($post->post_content);
+        $content = substr($content, 0, 2000); // Limit content length
+        
+        $prompt = "Based on the following blog post content, write a compelling meta description between 120-160 characters that will encourage clicks from search results. Be concise and include the main topic.\n\nTitle: {$post->post_title}\n\nContent excerpt:\n{$content}\n\nMeta description:";
+        
+        $response = $this->call_claude_api($prompt, 100);
+        
+        if ($response && isset($response['content'][0]['text'])) {
+            $meta = trim($response['content'][0]['text']);
+            // Ensure it's within limits
+            if (strlen($meta) > 160) {
+                $meta = substr($meta, 0, 157) . '...';
+            }
+            return $meta;
+        }
+        
+        return false;
+    }
+    
+    // Analyze image optimization opportunities
+    private function analyze_image_optimization() {
         $args = array(
             'post_type' => 'attachment',
             'post_mime_type' => 'image',
             'posts_per_page' => -1,
-            'meta_query' => array(
-                array(
-                    'key' => '_wp_attachment_metadata',
-                    'compare' => 'EXISTS'
-                )
-            )
+            'post_status' => 'any'
         );
         
         $images = get_posts($args);
-        $unoptimized = 0;
+        $results = array(
+            'total_images' => count($images),
+            'large_images' => array(),
+            'missing_alt' => array(),
+            'unoptimized_formats' => array()
+        );
         
         foreach ($images as $image) {
             $file_path = get_attached_file($image->ID);
+            
             if (file_exists($file_path)) {
                 $file_size = filesize($file_path);
-                // Simple heuristic: if image is > 500KB, it could be optimized
-                if ($file_size > 500000) {
-                    $unoptimized++;
+                
+                // Check for large images (over 200KB)
+                if ($file_size > 204800) {
+                    $results['large_images'][] = array(
+                        'id' => $image->ID,
+                        'title' => $image->post_title,
+                        'size' => size_format($file_size),
+                        'url' => wp_get_attachment_url($image->ID)
+                    );
+                }
+                
+                // Check for missing alt text
+                $alt_text = get_post_meta($image->ID, '_wp_attachment_image_alt', true);
+                if (empty($alt_text)) {
+                    $results['missing_alt'][] = array(
+                        'id' => $image->ID,
+                        'title' => $image->post_title,
+                        'url' => wp_get_attachment_url($image->ID)
+                    );
+                }
+                
+                // Check for non-WebP formats
+                $file_type = wp_check_filetype($file_path);
+                if (in_array($file_type['ext'], array('jpg', 'jpeg', 'png')) && $file_size > 51200) {
+                    $results['unoptimized_formats'][] = array(
+                        'id' => $image->ID,
+                        'title' => $image->post_title,
+                        'format' => $file_type['ext'],
+                        'size' => size_format($file_size),
+                        'url' => wp_get_attachment_url($image->ID)
+                    );
                 }
             }
         }
         
-        return $unoptimized;
+        return $results;
     }
     
-    private function format_bytes($bytes) {
-        $units = array('B', 'KB', 'MB', 'GB');
-        $bytes = max($bytes, 0);
-        $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
-        $pow = min($pow, count($units) - 1);
-        $bytes /= pow(1024, $pow);
-        return round($bytes, 2) . ' ' . $units[$pow];
-    }
-    
-    private function call_claude_api($prompt) {
-        $api_url = 'https://api.anthropic.com/v1/messages';
+    // Call Claude API
+    private function call_claude_api($prompt, $max_tokens = 1024) {
+        if (empty($this->api_key)) {
+            return false;
+        }
         
-        $body = array(
-            'model' => 'claude-sonnet-4-20250514',
-            'max_tokens' => 1024,
-            'messages' => array(
-                array(
-                    'role' => 'user',
-                    'content' => $prompt
-                )
-            )
-        );
-        
-        $response = wp_remote_post($api_url, array(
+        $response = wp_remote_post('https://api.anthropic.com/v1/messages', array(
+            'timeout' => 30,
             'headers' => array(
                 'Content-Type' => 'application/json',
                 'x-api-key' => $this->api_key,
                 'anthropic-version' => '2023-06-01'
             ),
-            'body' => json_encode($body),
-            'timeout' => 30
+            'body' => json_encode(array(
+                'model' => 'claude-sonnet-4-20250514',
+                'max_tokens' => $max_tokens,
+                'messages' => array(
+                    array(
+                        'role' => 'user',
+                        'content' => $prompt
+                    )
+                )
+            ))
         ));
         
         if (is_wp_error($response)) {
@@ -413,65 +455,6 @@ class Claude_SEO_Optimizer {
         }
         
         $body = json_decode(wp_remote_retrieve_body($response), true);
-        
-        if (isset($body['content'][0]['text'])) {
-            return $body['content'][0]['text'];
-        }
-        
-        return false;
-    }
-    
-    private function enable_performance_optimizations() {
-        // Enable Gzip compression
-        add_action('init', function() {
-            if (!headers_sent() && extension_loaded('zlib') && !ini_get('zlib.output_compression')) {
-                if (strpos($_SERVER['HTTP_ACCEPT_ENCODING'], 'gzip') !== false) {
-                    ob_start('ob_gzhandler');
-                }
-            }
-        });
-        
-        // Remove query strings from static resources
-        add_filter('script_loader_src', array($this, 'remove_query_strings'), 15);
-        add_filter('style_loader_src', array($this, 'remove_query_strings'), 15);
-        
-        // Disable emojis
-        remove_action('wp_head', 'print_emoji_detection_script', 7);
-        remove_action('wp_print_styles', 'print_emoji_styles');
-        
-        // Defer JavaScript loading
-        add_filter('script_loader_tag', array($this, 'defer_javascript'), 10, 2);
-    }
-    
-    public function remove_query_strings($src) {
-        if (strpos($src, '?ver=')) {
-            $src = remove_query_arg('ver', $src);
-        }
-        return $src;
-    }
-    
-    public function defer_javascript($tag, $handle) {
-        $defer_scripts = array('jquery', 'jquery-core', 'jquery-migrate');
-        
-        if (in_array($handle, $defer_scripts)) {
-            return $tag;
-        }
-        
-        return str_replace(' src', ' defer src', $tag);
-    }
-    
-    public function render_main_page() {
-        include CLAUDE_SEO_PLUGIN_DIR . 'templates/main-page.php';
-    }
-    
-    public function render_performance_page() {
-        include CLAUDE_SEO_PLUGIN_DIR . 'templates/performance-page.php';
-    }
-    
-    public function render_settings_page() {
-        include CLAUDE_SEO_PLUGIN_DIR . 'templates/settings-page.php';
+        return $body;
     }
 }
-
-// Initialize the plugin
-Claude_SEO_Optimizer::get_instance();
