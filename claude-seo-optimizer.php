@@ -1,4 +1,3 @@
-cd /home/claude && cat > seo-performance-agent.php << 'EOF'
 <?php
 /**
  * Plugin Name: Claude SEO & Performance Agent
