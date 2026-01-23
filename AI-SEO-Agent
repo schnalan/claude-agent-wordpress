@@ -1,0 +1,1549 @@
+<?php
+/**
+ * Plugin Name: AI SEO Agent
+ * Plugin URI: https://example.com/ai-seo-agent
+ * Description: An AI-powered SEO optimization plugin that automatically generates and optimizes meta descriptions, keywords, and title tags using OpenAI's GPT technology. Includes automated background tasks for content optimization.
+ * Version: 1.0.0
+ * Author: Your Name
+ * Author URI: https://example.com
+ * License: GPL v2 or later
+ * License URI: https://www.gnu.org/licenses/gpl-2.0.html
+ * Text Domain: ai-seo-agent
+ * Domain Path: /languages
+ * Requires at least: 5.8
+ * Requires PHP: 7.4
+ */
+
+// Exit if accessed directly
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+/**
+ * Main AI SEO Agent Plugin Class
+ */
+class AI_SEO_Agent_Plugin {
+    
+    /**
+     * Plugin version
+     */
+    const VERSION = '1.0.0';
+    
+    /**
+     * Singleton instance
+     */
+    private static $instance = null;
+    
+    /**
+     * Plugin settings
+     */
+    private $settings = array();
+    
+    /**
+     * Get singleton instance
+     */
+    public static function get_instance() {
+        if (null === self::$instance) {
+            self::$instance = new self();
+        }
+        return self::$instance;
+    }
+    
+    /**
+     * Constructor
+     */
+    private function __construct() {
+        $this->load_settings();
+        $this->init_hooks();
+    }
+    
+    /**
+     * Load plugin settings
+     */
+    private function load_settings() {
+        $defaults = array(
+            'api_key' => '',
+            'auto_generate' => false,
+            'supported_post_types' => array('post', 'page'),
+            'api_model' => 'gpt-3.5-turbo',
+            'rate_limit' => 50, // API calls per day
+            'enable_open_graph' => true,
+            'enable_schema' => true,
+        );
+        
+        $this->settings = wp_parse_args(get_option('ai_seo_settings', array()), $defaults);
+    }
+    
+    /**
+     * Initialize WordPress hooks
+     */
+    private function init_hooks() {
+        // Localization
+        add_action('plugins_loaded', array($this, 'load_textdomain'));
+        
+        // Admin hooks
+        add_action('admin_menu', array($this, 'add_admin_menu'));
+        add_action('admin_init', array($this, 'register_settings'));
+        add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_assets'));
+        
+        // Meta boxes
+        add_action('add_meta_boxes', array($this, 'add_meta_boxes'));
+        add_action('save_post', array($this, 'save_meta_box'), 10, 2);
+        
+        // Frontend hooks
+        add_action('wp_head', array($this, 'add_meta_tags'), 1);
+        
+        // AJAX hooks
+        add_action('wp_ajax_ai_seo_generate', array($this, 'ajax_generate_seo'));
+        add_action('wp_ajax_ai_seo_bulk_optimize', array($this, 'ajax_bulk_optimize'));
+        add_action('wp_ajax_ai_seo_preview', array($this, 'ajax_preview'));
+        
+        // Cron hooks
+        add_action('ai_seo_daily_optimization', array($this, 'process_scheduled_optimization'));
+        
+        // Bulk actions
+        add_filter('bulk_actions-edit-post', array($this, 'register_bulk_actions'));
+        add_filter('bulk_actions-edit-page', array($this, 'register_bulk_actions'));
+        add_filter('handle_bulk_actions-edit-post', array($this, 'handle_bulk_actions'), 10, 3);
+        add_filter('handle_bulk_actions-edit-page', array($this, 'handle_bulk_actions'), 10, 3);
+        add_action('admin_notices', array($this, 'bulk_action_notices'));
+    }
+    
+    /**
+     * Load plugin textdomain for translations
+     */
+    public function load_textdomain() {
+        load_plugin_textdomain('ai-seo-agent', false, dirname(plugin_basename(__FILE__)) . '/languages');
+    }
+    
+    /**
+     * Add admin menu pages
+     */
+    public function add_admin_menu() {
+        // Main settings page
+        add_menu_page(
+            __('AI SEO Agent', 'ai-seo-agent'),
+            __('AI SEO', 'ai-seo-agent'),
+            'manage_options',
+            'ai-seo-agent',
+            array($this, 'render_settings_page'),
+            'dashicons-chart-line',
+            66
+        );
+        
+        // Statistics submenu
+        add_submenu_page(
+            'ai-seo-agent',
+            __('Statistics', 'ai-seo-agent'),
+            __('Statistics', 'ai-seo-agent'),
+            'manage_options',
+            'ai-seo-statistics',
+            array($this, 'render_statistics_page')
+        );
+        
+        // Activity Log submenu
+        add_submenu_page(
+            'ai-seo-agent',
+            __('Activity Log', 'ai-seo-agent'),
+            __('Activity Log', 'ai-seo-agent'),
+            'manage_options',
+            'ai-seo-activity',
+            array($this, 'render_activity_page')
+        );
+    }
+    
+    /**
+     * Register plugin settings
+     */
+    public function register_settings() {
+        register_setting(
+            'ai_seo_settings_group',
+            'ai_seo_settings',
+            array($this, 'sanitize_settings')
+        );
+        
+        // API Settings Section
+        add_settings_section(
+            'ai_seo_api_section',
+            __('API Configuration', 'ai-seo-agent'),
+            array($this, 'render_api_section'),
+            'ai-seo-agent'
+        );
+        
+        add_settings_field(
+            'api_key',
+            __('OpenAI API Key', 'ai-seo-agent'),
+            array($this, 'render_api_key_field'),
+            'ai-seo-agent',
+            'ai_seo_api_section'
+        );
+        
+        add_settings_field(
+            'api_model',
+            __('AI Model', 'ai-seo-agent'),
+            array($this, 'render_api_model_field'),
+            'ai-seo-agent',
+            'ai_seo_api_section'
+        );
+        
+        // General Settings Section
+        add_settings_section(
+            'ai_seo_general_section',
+            __('General Settings', 'ai-seo-agent'),
+            array($this, 'render_general_section'),
+            'ai-seo-agent'
+        );
+        
+        add_settings_field(
+            'auto_generate',
+            __('Auto-Generate SEO Content', 'ai-seo-agent'),
+            array($this, 'render_auto_generate_field'),
+            'ai-seo-agent',
+            'ai_seo_general_section'
+        );
+        
+        add_settings_field(
+            'supported_post_types',
+            __('Supported Post Types', 'ai-seo-agent'),
+            array($this, 'render_post_types_field'),
+            'ai-seo-agent',
+            'ai_seo_general_section'
+        );
+        
+        add_settings_field(
+            'rate_limit',
+            __('Daily API Call Limit', 'ai-seo-agent'),
+            array($this, 'render_rate_limit_field'),
+            'ai-seo-agent',
+            'ai_seo_general_section'
+        );
+        
+        // Features Section
+        add_settings_section(
+            'ai_seo_features_section',
+            __('Feature Settings', 'ai-seo-agent'),
+            array($this, 'render_features_section'),
+            'ai-seo-agent'
+        );
+        
+        add_settings_field(
+            'enable_open_graph',
+            __('Enable Open Graph Tags', 'ai-seo-agent'),
+            array($this, 'render_open_graph_field'),
+            'ai-seo-agent',
+            'ai_seo_features_section'
+        );
+        
+        add_settings_field(
+            'enable_schema',
+            __('Enable Schema.org Markup', 'ai-seo-agent'),
+            array($this, 'render_schema_field'),
+            'ai-seo-agent',
+            'ai_seo_features_section'
+        );
+    }
+    
+    /**
+     * Sanitize settings input
+     */
+    public function sanitize_settings($input) {
+        $sanitized = array();
+        
+        if (isset($input['api_key'])) {
+            $sanitized['api_key'] = sanitize_text_field($input['api_key']);
+        }
+        
+        if (isset($input['api_model'])) {
+            $allowed_models = array('gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo-preview');
+            $sanitized['api_model'] = in_array($input['api_model'], $allowed_models) ? $input['api_model'] : 'gpt-3.5-turbo';
+        }
+        
+        $sanitized['auto_generate'] = isset($input['auto_generate']) ? (bool) $input['auto_generate'] : false;
+        $sanitized['enable_open_graph'] = isset($input['enable_open_graph']) ? (bool) $input['enable_open_graph'] : false;
+        $sanitized['enable_schema'] = isset($input['enable_schema']) ? (bool) $input['enable_schema'] : false;
+        
+        if (isset($input['rate_limit'])) {
+            $sanitized['rate_limit'] = absint($input['rate_limit']);
+            if ($sanitized['rate_limit'] < 1) {
+                $sanitized['rate_limit'] = 50;
+            }
+        }
+        
+        if (isset($input['supported_post_types']) && is_array($input['supported_post_types'])) {
+            $sanitized['supported_post_types'] = array_map('sanitize_key', $input['supported_post_types']);
+        }
+        
+        return $sanitized;
+    }
+    
+    /**
+     * Render settings sections
+     */
+    public function render_api_section() {
+        echo '<p>' . esc_html__('Configure your OpenAI API credentials and model settings.', 'ai-seo-agent') . '</p>';
+    }
+    
+    public function render_general_section() {
+        echo '<p>' . esc_html__('Configure general plugin behavior and automation settings.', 'ai-seo-agent') . '</p>';
+    }
+    
+    public function render_features_section() {
+        echo '<p>' . esc_html__('Enable or disable specific SEO features.', 'ai-seo-agent') . '</p>';
+    }
+    
+    /**
+     * Render settings fields
+     */
+    public function render_api_key_field() {
+        $api_key = isset($this->settings['api_key']) ? $this->settings['api_key'] : '';
+        $display_key = !empty($api_key) ? substr($api_key, 0, 10) . '...' : '';
+        ?>
+        <input type="password" 
+               name="ai_seo_settings[api_key]" 
+               value="<?php echo esc_attr($api_key); ?>" 
+               class="regular-text"
+               placeholder="sk-...">
+        <?php if (!empty($display_key)): ?>
+            <p class="description"><?php echo esc_html(sprintf(__('Current key: %s', 'ai-seo-agent'), $display_key)); ?></p>
+        <?php endif; ?>
+        <p class="description">
+            <?php echo sprintf(
+                __('Get your API key from <a href="%s" target="_blank">OpenAI Platform</a>.', 'ai-seo-agent'),
+                'https://platform.openai.com/api-keys'
+            ); ?>
+        </p>
+        <?php
+    }
+    
+    public function render_api_model_field() {
+        $model = isset($this->settings['api_model']) ? $this->settings['api_model'] : 'gpt-3.5-turbo';
+        $models = array(
+            'gpt-3.5-turbo' => 'GPT-3.5 Turbo (Faster, Lower Cost)',
+            'gpt-4' => 'GPT-4 (Higher Quality, Higher Cost)',
+            'gpt-4-turbo-preview' => 'GPT-4 Turbo (Best Quality, Highest Cost)',
+        );
+        ?>
+        <select name="ai_seo_settings[api_model]">
+            <?php foreach ($models as $value => $label): ?>
+                <option value="<?php echo esc_attr($value); ?>" <?php selected($model, $value); ?>>
+                    <?php echo esc_html($label); ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+        <?php
+    }
+    
+    public function render_auto_generate_field() {
+        $auto_generate = isset($this->settings['auto_generate']) ? $this->settings['auto_generate'] : false;
+        ?>
+        <label>
+            <input type="checkbox" 
+                   name="ai_seo_settings[auto_generate]" 
+                   value="1" 
+                   <?php checked($auto_generate, true); ?>>
+            <?php esc_html_e('Automatically generate SEO content for new posts', 'ai-seo-agent'); ?>
+        </label>
+        <p class="description">
+            <?php esc_html_e('When enabled, the plugin will automatically generate SEO metadata when posts are published.', 'ai-seo-agent'); ?>
+        </p>
+        <?php
+    }
+    
+    public function render_post_types_field() {
+        $supported = isset($this->settings['supported_post_types']) ? $this->settings['supported_post_types'] : array('post', 'page');
+        $post_types = get_post_types(array('public' => true), 'objects');
+        
+        foreach ($post_types as $post_type) {
+            if ($post_type->name === 'attachment') {
+                continue;
+            }
+            $checked = in_array($post_type->name, $supported);
+            ?>
+            <label style="display: block; margin-bottom: 5px;">
+                <input type="checkbox" 
+                       name="ai_seo_settings[supported_post_types][]" 
+                       value="<?php echo esc_attr($post_type->name); ?>"
+                       <?php checked($checked, true); ?>>
+                <?php echo esc_html($post_type->labels->name); ?>
+            </label>
+            <?php
+        }
+    }
+    
+    public function render_rate_limit_field() {
+        $rate_limit = isset($this->settings['rate_limit']) ? $this->settings['rate_limit'] : 50;
+        ?>
+        <input type="number" 
+               name="ai_seo_settings[rate_limit]" 
+               value="<?php echo esc_attr($rate_limit); ?>" 
+               min="1" 
+               max="1000"
+               class="small-text">
+        <p class="description">
+            <?php esc_html_e('Maximum number of API calls allowed per day to control costs.', 'ai-seo-agent'); ?>
+        </p>
+        <?php
+    }
+    
+    public function render_open_graph_field() {
+        $enabled = isset($this->settings['enable_open_graph']) ? $this->settings['enable_open_graph'] : true;
+        ?>
+        <label>
+            <input type="checkbox" 
+                   name="ai_seo_settings[enable_open_graph]" 
+                   value="1" 
+                   <?php checked($enabled, true); ?>>
+            <?php esc_html_e('Add Open Graph meta tags for social media sharing', 'ai-seo-agent'); ?>
+        </label>
+        <?php
+    }
+    
+    public function render_schema_field() {
+        $enabled = isset($this->settings['enable_schema']) ? $this->settings['enable_schema'] : true;
+        ?>
+        <label>
+            <input type="checkbox" 
+                   name="ai_seo_settings[enable_schema]" 
+                   value="1" 
+                   <?php checked($enabled, true); ?>>
+            <?php esc_html_e('Add Schema.org structured data (JSON-LD)', 'ai-seo-agent'); ?>
+        </label>
+        <?php
+    }
+    
+    /**
+     * Render settings page
+     */
+    public function render_settings_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die(__('You do not have sufficient permissions to access this page.', 'ai-seo-agent'));
+        }
+        ?>
+        <div class="wrap">
+            <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
+            
+            <?php settings_errors('ai_seo_settings'); ?>
+            
+            <form method="post" action="options.php">
+                <?php
+                settings_fields('ai_seo_settings_group');
+                do_settings_sections('ai-seo-agent');
+                submit_button(__('Save Settings', 'ai-seo-agent'));
+                ?>
+            </form>
+            
+            <hr>
+            
+            <h2><?php esc_html_e('Quick Actions', 'ai-seo-agent'); ?></h2>
+            <p>
+                <button class="button button-secondary" id="ai-seo-test-api">
+                    <?php esc_html_e('Test API Connection', 'ai-seo-agent'); ?>
+                </button>
+                <span id="ai-seo-test-result"></span>
+            </p>
+        </div>
+        <?php
+    }
+    
+    /**
+     * Render statistics page
+     */
+    public function render_statistics_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die(__('You do not have sufficient permissions to access this page.', 'ai-seo-agent'));
+        }
+        
+        $stats = $this->get_statistics();
+        ?>
+        <div class="wrap">
+            <h1><?php esc_html_e('SEO Optimization Statistics', 'ai-seo-agent'); ?></h1>
+            
+            <div class="ai-seo-stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 20px 0;">
+                
+                <div class="ai-seo-stat-card" style="background: #fff; padding: 20px; border: 1px solid #ccc; border-radius: 5px;">
+                    <h3><?php esc_html_e('Total Posts', 'ai-seo-agent'); ?></h3>
+                    <p style="font-size: 36px; font-weight: bold; margin: 10px 0;"><?php echo esc_html($stats['total_posts']); ?></p>
+                </div>
+                
+                <div class="ai-seo-stat-card" style="background: #fff; padding: 20px; border: 1px solid #ccc; border-radius: 5px;">
+                    <h3><?php esc_html_e('Optimized Posts', 'ai-seo-agent'); ?></h3>
+                    <p style="font-size: 36px; font-weight: bold; margin: 10px 0; color: #46b450;">
+                        <?php echo esc_html($stats['optimized_posts']); ?>
+                    </p>
+                    <p><?php echo esc_html(sprintf(__('%d%% Complete', 'ai-seo-agent'), $stats['optimization_percentage'])); ?></p>
+                </div>
+                
+                <div class="ai-seo-stat-card" style="background: #fff; padding: 20px; border: 1px solid #ccc; border-radius: 5px;">
+                    <h3><?php esc_html_e('Needs Optimization', 'ai-seo-agent'); ?></h3>
+                    <p style="font-size: 36px; font-weight: bold; margin: 10px 0; color: #dc3232;">
+                        <?php echo esc_html($stats['needs_optimization']); ?>
+                    </p>
+                </div>
+                
+                <div class="ai-seo-stat-card" style="background: #fff; padding: 20px; border: 1px solid #ccc; border-radius: 5px;">
+                    <h3><?php esc_html_e('API Calls Today', 'ai-seo-agent'); ?></h3>
+                    <p style="font-size: 36px; font-weight: bold; margin: 10px 0;">
+                        <?php echo esc_html($stats['api_calls_today']); ?>
+                    </p>
+                    <p><?php echo esc_html(sprintf(__('of %d limit', 'ai-seo-agent'), $this->settings['rate_limit'])); ?></p>
+                </div>
+                
+            </div>
+            
+            <h2><?php esc_html_e('Posts Needing Optimization', 'ai-seo-agent'); ?></h2>
+            <?php
+            $unoptimized = $this->get_unoptimized_posts(10);
+            if (!empty($unoptimized)) {
+                ?>
+                <table class="wp-list-table widefat fixed striped">
+                    <thead>
+                        <tr>
+                            <th><?php esc_html_e('Title', 'ai-seo-agent'); ?></th>
+                            <th><?php esc_html_e('Type', 'ai-seo-agent'); ?></th>
+                            <th><?php esc_html_e('Date', 'ai-seo-agent'); ?></th>
+                            <th><?php esc_html_e('Action', 'ai-seo-agent'); ?></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($unoptimized as $post): ?>
+                            <tr>
+                                <td>
+                                    <strong>
+                                        <a href="<?php echo esc_url(get_edit_post_link($post->ID)); ?>">
+                                            <?php echo esc_html($post->post_title); ?>
+                                        </a>
+                                    </strong>
+                                </td>
+                                <td><?php echo esc_html(get_post_type_object($post->post_type)->labels->singular_name); ?></td>
+                                <td><?php echo esc_html(get_the_date('', $post)); ?></td>
+                                <td>
+                                    <button class="button button-small ai-seo-optimize-single" 
+                                            data-post-id="<?php echo esc_attr($post->ID); ?>">
+                                        <?php esc_html_e('Optimize Now', 'ai-seo-agent'); ?>
+                                    </button>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <?php
+            } else {
+                echo '<p>' . esc_html__('All posts are optimized!', 'ai-seo-agent') . '</p>';
+            }
+            ?>
+        </div>
+        <?php
+    }
+    
+    /**
+     * Render activity log page
+     */
+    public function render_activity_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die(__('You do not have sufficient permissions to access this page.', 'ai-seo-agent'));
+        }
+        
+        $activities = $this->get_activity_log(50);
+        ?>
+        <div class="wrap">
+            <h1><?php esc_html_e('Activity Log', 'ai-seo-agent'); ?></h1>
+            
+            <p><?php esc_html_e('Recent AI optimization activities:', 'ai-seo-agent'); ?></p>
+            
+            <?php if (!empty($activities)): ?>
+                <table class="wp-list-table widefat fixed striped">
+                    <thead>
+                        <tr>
+                            <th width="20%"><?php esc_html_e('Date/Time', 'ai-seo-agent'); ?></th>
+                            <th width="15%"><?php esc_html_e('Action', 'ai-seo-agent'); ?></th>
+                            <th width="45%"><?php esc_html_e('Details', 'ai-seo-agent'); ?></th>
+                            <th width="20%"><?php esc_html_e('Status', 'ai-seo-agent'); ?></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($activities as $activity): ?>
+                            <tr>
+                                <td><?php echo esc_html(date_i18n(get_option('date_format') . ' ' . get_option('time_format'), $activity['timestamp'])); ?></td>
+                                <td><?php echo esc_html($activity['action']); ?></td>
+                                <td><?php echo esc_html($activity['details']); ?></td>
+                                <td>
+                                    <span class="ai-seo-status ai-seo-status-<?php echo esc_attr($activity['status']); ?>">
+                                        <?php echo esc_html(ucfirst($activity['status'])); ?>
+                                    </span>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php else: ?>
+                <p><?php esc_html_e('No activity recorded yet.', 'ai-seo-agent'); ?></p>
+            <?php endif; ?>
+        </div>
+        <?php
+    }
+    
+    /**
+     * Enqueue admin assets
+     */
+    public function enqueue_admin_assets($hook) {
+        // Only load on our plugin pages and post editor
+        $our_pages = array('toplevel_page_ai-seo-agent', 'ai-seo_page_ai-seo-statistics', 'ai-seo_page_ai-seo-activity');
+        $is_editor = in_array($hook, array('post.php', 'post-new.php'));
+        
+        if (!in_array($hook, $our_pages) && !$is_editor) {
+            return;
+        }
+        
+        // Enqueue admin styles
+        wp_enqueue_style(
+            'ai-seo-agent-admin',
+            plugins_url('assets/admin-style.css', __FILE__),
+            array(),
+            self::VERSION
+        );
+        
+        // Inline styles if CSS file doesn't exist
+        $css = "
+        .ai-seo-meta-box { padding: 10px; }
+        .ai-seo-field { margin-bottom: 15px; }
+        .ai-seo-field label { display: block; font-weight: bold; margin-bottom: 5px; }
+        .ai-seo-field input[type='text'],
+        .ai-seo-field textarea { width: 100%; }
+        .ai-seo-char-count { font-size: 12px; color: #666; margin-top: 5px; }
+        .ai-seo-char-count.warning { color: #dc3232; }
+        .ai-seo-char-count.good { color: #46b450; }
+        .ai-seo-generate-btn { margin-top: 10px; }
+        .ai-seo-preview { background: #f5f5f5; padding: 15px; border-radius: 5px; margin-top: 15px; }
+        .ai-seo-preview-title { color: #1a0dab; font-size: 18px; margin: 0 0 5px; }
+        .ai-seo-preview-url { color: #006621; font-size: 14px; margin: 0 0 5px; }
+        .ai-seo-preview-description { color: #545454; font-size: 13px; margin: 0; }
+        .ai-seo-status { padding: 3px 8px; border-radius: 3px; font-size: 12px; }
+        .ai-seo-status-success { background: #46b450; color: white; }
+        .ai-seo-status-error { background: #dc3232; color: white; }
+        .ai-seo-status-pending { background: #ffb900; color: white; }
+        .ai-seo-keyword-analysis { margin-top: 15px; padding: 10px; background: #f9f9f9; border-left: 3px solid #2271b1; }
+        ";
+        wp_add_inline_style('ai-seo-agent-admin', $css);
+        
+        // Enqueue admin scripts
+        wp_enqueue_script(
+            'ai-seo-agent-admin',
+            plugins_url('assets/admin-script.js', __FILE__),
+            array('jquery'),
+            self::VERSION,
+            true
+        );
+        
+        // Inline script if JS file doesn't exist
+        $js = "
+        jQuery(document).ready(function($) {
+            // Character counter
+            function updateCharCount(textarea) {
+                var length = textarea.val().length;
+                var counter = textarea.siblings('.ai-seo-char-count');
+                var remaining = 160 - length;
+                
+                counter.find('.count').text(length);
+                counter.removeClass('warning good');
+                
+                if (length >= 150 && length <= 160) {
+                    counter.addClass('good');
+                } else if (length > 160) {
+                    counter.addClass('warning');
+                }
+            }
+            
+            $('.ai-seo-description').on('keyup', function() {
+                updateCharCount($(this));
+            });
+            
+            // AI Generate button
+            $('.ai-seo-generate-btn').on('click', function(e) {
+                e.preventDefault();
+                var button = $(this);
+                var field = button.data('field');
+                var postId = $('#post_ID').val();
+                
+                button.prop('disabled', true).text('" . esc_js(__('Generating...', 'ai-seo-agent')) . "');
+                
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'ai_seo_generate',
+                        post_id: postId,
+                        field: field,
+                        nonce: $('#ai_seo_nonce').val()
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            $('#ai_seo_' + field).val(response.data.content);
+                            if (field === 'description') {
+                                updateCharCount($('#ai_seo_' + field));
+                            }
+                            alert('" . esc_js(__('Content generated successfully!', 'ai-seo-agent')) . "');
+                        } else {
+                            alert('" . esc_js(__('Error:', 'ai-seo-agent')) . " ' + response.data.message);
+                        }
+                    },
+                    complete: function() {
+                        button.prop('disabled', false).text(button.data('original-text'));
+                    }
+                });
+            });
+            
+            // Store original button text
+            $('.ai-seo-generate-btn').each(function() {
+                $(this).data('original-text', $(this).text());
+            });
+            
+            // Preview update
+            function updatePreview() {
+                var title = $('#ai_seo_title').val() || $('#title').val();
+                var description = $('#ai_seo_description').val();
+                
+                $('.ai-seo-preview-title').text(title);
+                $('.ai-seo-preview-description').text(description);
+            }
+            
+            $('#ai_seo_title, #ai_seo_description, #title').on('keyup', updatePreview);
+            
+            // Test API button
+            $('#ai-seo-test-api').on('click', function(e) {
+                e.preventDefault();
+                var button = $(this);
+                var result = $('#ai-seo-test-result');
+                
+                button.prop('disabled', true);
+                result.html('<span style=\"color: #666;\">" . esc_js(__('Testing...', 'ai-seo-agent')) . "</span>');
+                
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'ai_seo_test_connection'
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            result.html('<span style=\"color: #46b450;\">✓ " . esc_js(__('API connection successful!', 'ai-seo-agent')) . "</span>');
+                        } else {
+                            result.html('<span style=\"color: #dc3232;\">✗ " . esc_js(__('Connection failed:', 'ai-seo-agent')) . " ' + response.data.message + '</span>');
+                        }
+                    },
+                    complete: function() {
+                        button.prop('disabled', false);
+                    }
+                });
+            });
+            
+            // Single post optimize button
+            $('.ai-seo-optimize-single').on('click', function(e) {
+                e.preventDefault();
+                var button = $(this);
+                var postId = button.data('post-id');
+                
+                button.prop('disabled', true).text('" . esc_js(__('Optimizing...', 'ai-seo-agent')) . "');
+                
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'ai_seo_generate',
+                        post_id: postId,
+                        field: 'all'
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            button.closest('tr').fadeOut();
+                            alert('" . esc_js(__('Post optimized successfully!', 'ai-seo-agent')) . "');
+                        } else {
+                            alert('" . esc_js(__('Error:', 'ai-seo-agent')) . " ' + response.data.message);
+                            button.prop('disabled', false).text('" . esc_js(__('Optimize Now', 'ai-seo-agent')) . "');
+                        }
+                    }
+                });
+            });
+        });
+        ";
+        wp_add_inline_script('ai-seo-agent-admin', $js);
+        
+        // Localize script
+        wp_localize_script('ai-seo-agent-admin', 'aiSeoData', array(
+            'ajaxurl' => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce('ai_seo_nonce'),
+        ));
+    }
+    
+    /**
+     * Add meta boxes to post editor
+     */
+    public function add_meta_boxes() {
+        $post_types = isset($this->settings['supported_post_types']) ? $this->settings['supported_post_types'] : array('post', 'page');
+        
+        foreach ($post_types as $post_type) {
+            add_meta_box(
+                'ai_seo_meta_box',
+                __('AI SEO Optimization', 'ai-seo-agent'),
+                array($this, 'render_meta_box'),
+                $post_type,
+                'normal',
+                'high'
+            );
+        }
+    }
+    
+    /**
+     * Render meta box
+     */
+    public function render_meta_box($post) {
+        // Add nonce for security
+        wp_nonce_field('ai_seo_meta_box', 'ai_seo_nonce');
+        
+        // Get current values
+        $title = get_post_meta($post->ID, '_seo_title', true);
+        $description = get_post_meta($post->ID, '_seo_description', true);
+        $keywords = get_post_meta($post->ID, '_seo_keywords', true);
+        $optimized_date = get_post_meta($post->ID, '_seo_optimized_date', true);
+        
+        // Use post title if no SEO title set
+        if (empty($title)) {
+            $title = $post->post_title;
+        }
+        
+        ?>
+        <div class="ai-seo-meta-box">
+            
+            <?php if ($optimized_date): ?>
+                <p style="background: #e7f7e7; padding: 10px; border-left: 3px solid #46b450;">
+                    <?php echo esc_html(sprintf(__('Last optimized: %s', 'ai-seo-agent'), date_i18n(get_option('date_format') . ' ' . get_option('time_format'), $optimized_date))); ?>
+                </p>
+            <?php endif; ?>
+            
+            <!-- SEO Title -->
+            <div class="ai-seo-field">
+                <label for="ai_seo_title">
+                    <?php esc_html_e('SEO Title Tag', 'ai-seo-agent'); ?>
+                </label>
+                <input type="text" 
+                       id="ai_seo_title" 
+                       name="ai_seo_title" 
+                       value="<?php echo esc_attr($title); ?>" 
+                       class="ai-seo-title">
+                <p class="ai-seo-char-count">
+                    <?php esc_html_e('Characters:', 'ai-seo-agent'); ?> 
+                    <span class="count"><?php echo esc_html(strlen($title)); ?></span>/60
+                </p>
+                <button type="button" 
+                        class="button button-secondary ai-seo-generate-btn" 
+                        data-field="title">
+                    <?php esc_html_e('Generate with AI', 'ai-seo-agent'); ?>
+                </button>
+            </div>
+            
+            <!-- Meta Description -->
+            <div class="ai-seo-field">
+                <label for="ai_seo_description">
+                    <?php esc_html_e('Meta Description', 'ai-seo-agent'); ?>
+                </label>
+                <textarea id="ai_seo_description" 
+                          name="ai_seo_description" 
+                          rows="3" 
+                          class="ai-seo-description"><?php echo esc_textarea($description); ?></textarea>
+                <p class="ai-seo-char-count <?php echo strlen($description) >= 150 && strlen($description) <= 160 ? 'good' : (strlen($description) > 160 ? 'warning' : ''); ?>">
+                    <?php esc_html_e('Characters:', 'ai-seo-agent'); ?> 
+                    <span class="count"><?php echo esc_html(strlen($description)); ?></span>/160 
+                    <?php esc_html_e('(recommended: 150-160)', 'ai-seo-agent'); ?>
+                </p>
+                <button type="button" 
+                        class="button button-secondary ai-seo-generate-btn" 
+                        data-field="description">
+                    <?php esc_html_e('Generate with AI', 'ai-seo-agent'); ?>
+                </button>
+            </div>
+            
+            <!-- Meta Keywords -->
+            <div class="ai-seo-field">
+                <label for="ai_seo_keywords">
+                    <?php esc_html_e('Meta Keywords', 'ai-seo-agent'); ?>
+                </label>
+                <input type="text" 
+                       id="ai_seo_keywords" 
+                       name="ai_seo_keywords" 
+                       value="<?php echo esc_attr($keywords); ?>" 
+                       placeholder="<?php esc_attr_e('keyword1, keyword2, keyword3', 'ai-seo-agent'); ?>">
+                <p class="description">
+                    <?php esc_html_e('Comma-separated keywords (optional, not widely used by search engines)', 'ai-seo-agent'); ?>
+                </p>
+                <button type="button" 
+                        class="button button-secondary ai-seo-generate-btn" 
+                        data-field="keywords">
+                    <?php esc_html_e('Generate with AI', 'ai-seo-agent'); ?>
+                </button>
+            </div>
+            
+            <!-- Keyword Density Analysis -->
+            <?php if (!empty($post->post_content)): ?>
+                <div class="ai-seo-keyword-analysis">
+                    <h4><?php esc_html_e('Keyword Analysis', 'ai-seo-agent'); ?></h4>
+                    <?php
+                    $analysis = $this->analyze_keyword_density($post->post_content);
+                    if (!empty($analysis)) {
+                        echo '<p>' . esc_html__('Top keywords in content:', 'ai-seo-agent') . '</p>';
+                        echo '<ul>';
+                        foreach (array_slice($analysis, 0, 5) as $keyword => $count) {
+                            echo '<li><strong>' . esc_html($keyword) . '</strong>: ' . esc_html($count) . ' ' . esc_html__('times', 'ai-seo-agent') . '</li>';
+                        }
+                        echo '</ul>';
+                    }
+                    ?>
+                </div>
+            <?php endif; ?>
+            
+            <!-- SERP Preview -->
+            <div class="ai-seo-preview">
+                <h4><?php esc_html_e('Search Engine Preview', 'ai-seo-agent'); ?></h4>
+                <div class="ai-seo-preview-title"><?php echo esc_html($title ? $title : $post->post_title); ?></div>
+                <div class="ai-seo-preview-url"><?php echo esc_html(get_permalink($post->ID)); ?></div>
+                <div class="ai-seo-preview-description"><?php echo esc_html($description ? $description : wp_trim_words($post->post_content, 20)); ?></div>
+            </div>
+            
+            <!-- Bulk Generate Button -->
+            <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd;">
+                <button type="button" 
+                        class="button button-primary ai-seo-generate-btn" 
+                        data-field="all">
+                    <?php esc_html_e('Generate All SEO Content with AI', 'ai-seo-agent'); ?>
+                </button>
+                <p class="description">
+                    <?php esc_html_e('This will generate title, description, and keywords all at once.', 'ai-seo-agent'); ?>
+                </p>
+            </div>
+            
+        </div>
+        <?php
+    }
+    
+    /**
+     * Save meta box data
+     */
+    public function save_meta_box($post_id, $post) {
+        // Security checks
+        if (!isset($_POST['ai_seo_nonce']) || !wp_verify_nonce($_POST['ai_seo_nonce'], 'ai_seo_meta_box')) {
+            return;
+        }
+        
+        if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
+            return;
+        }
+        
+        if (!current_user_can('edit_post', $post_id)) {
+            return;
+        }
+        
+        // Save SEO fields
+        if (isset($_POST['ai_seo_title'])) {
+            update_post_meta($post_id, '_seo_title', sanitize_text_field($_POST['ai_seo_title']));
+        }
+        
+        if (isset($_POST['ai_seo_description'])) {
+            update_post_meta($post_id, '_seo_description', sanitize_textarea_field($_POST['ai_seo_description']));
+        }
+        
+        if (isset($_POST['ai_seo_keywords'])) {
+            update_post_meta($post_id, '_seo_keywords', sanitize_text_field($_POST['ai_seo_keywords']));
+        }
+        
+        // Auto-generate if enabled and fields are empty
+        if ($this->settings['auto_generate'] && $post->post_status === 'publish') {
+            $description = get_post_meta($post_id, '_seo_description', true);
+            if (empty($description)) {
+                $this->generate_seo_content($post_id, 'all');
+            }
+        }
+    }
+    
+    /**
+     * Add meta tags to wp_head
+     */
+    public function add_meta_tags() {
+        if (!is_singular()) {
+            return;
+        }
+        
+        global $post;
+        if (!$post) {
+            return;
+        }
+        
+        // SEO Title
+        $seo_title = get_post_meta($post->ID, '_seo_title', true);
+        if (!empty($seo_title)) {
+            echo '<meta name="title" content="' . esc_attr($seo_title) . '">' . "\n";
+        }
+        
+        // Meta Description
+        $description = get_post_meta($post->ID, '_seo_description', true);
+        if (!empty($description)) {
+            echo '<meta name="description" content="' . esc_attr($description) . '">' . "\n";
+        }
+        
+        // Meta Keywords
+        $keywords = get_post_meta($post->ID, '_seo_keywords', true);
+        if (!empty($keywords)) {
+            echo '<meta name="keywords" content="' . esc_attr($keywords) . '">' . "\n";
+        }
+        
+        // Open Graph tags
+        if ($this->settings['enable_open_graph']) {
+            $this->add_open_graph_tags($post);
+        }
+        
+        // Schema.org markup
+        if ($this->settings['enable_schema']) {
+            $this->add_schema_markup($post);
+        }
+    }
+    
+    /**
+     * Add Open Graph meta tags
+     */
+    private function add_open_graph_tags($post) {
+        $title = get_post_meta($post->ID, '_seo_title', true);
+        if (empty($title)) {
+            $title = get_the_title($post);
+        }
+        
+        $description = get_post_meta($post->ID, '_seo_description', true);
+        if (empty($description)) {
+            $description = wp_trim_words($post->post_content, 30, '...');
+        }
+        
+        $image = get_the_post_thumbnail_url($post, 'large');
+        
+        echo '<meta property="og:type" content="article">' . "\n";
+        echo '<meta property="og:title" content="' . esc_attr($title) . '">' . "\n";
+        echo '<meta property="og:description" content="' . esc_attr($description) . '">' . "\n";
+        echo '<meta property="og:url" content="' . esc_url(get_permalink($post)) . '">' . "\n";
+        
+        if ($image) {
+            echo '<meta property="og:image" content="' . esc_url($image) . '">' . "\n";
+        }
+        
+        echo '<meta property="og:site_name" content="' . esc_attr(get_bloginfo('name')) . '">' . "\n";
+        
+        // Twitter Card
+        echo '<meta name="twitter:card" content="summary_large_image">' . "\n";
+        echo '<meta name="twitter:title" content="' . esc_attr($title) . '">' . "\n";
+        echo '<meta name="twitter:description" content="' . esc_attr($description) . '">' . "\n";
+        
+        if ($image) {
+            echo '<meta name="twitter:image" content="' . esc_url($image) . '">' . "\n";
+        }
+    }
+    
+    /**
+     * Add Schema.org structured data (JSON-LD)
+     */
+    private function add_schema_markup($post) {
+        $title = get_post_meta($post->ID, '_seo_title', true);
+        if (empty($title)) {
+            $title = get_the_title($post);
+        }
+        
+        $description = get_post_meta($post->ID, '_seo_description', true);
+        if (empty($description)) {
+            $description = wp_trim_words($post->post_content, 30, '...');
+        }
+        
+        $image = get_the_post_thumbnail_url($post, 'large');
+        $author = get_the_author_meta('display_name', $post->post_author);
+        
+        $schema = array(
+            '@context' => 'https://schema.org',
+            '@type' => 'Article',
+            'headline' => $title,
+            'description' => $description,
+            'datePublished' => get_the_date('c', $post),
+            'dateModified' => get_the_modified_date('c', $post),
+            'author' => array(
+                '@type' => 'Person',
+                'name' => $author,
+            ),
+            'publisher' => array(
+                '@type' => 'Organization',
+                'name' => get_bloginfo('name'),
+                'logo' => array(
+                    '@type' => 'ImageObject',
+                    'url' => get_site_icon_url(),
+                ),
+            ),
+        );
+        
+        if ($image) {
+            $schema['image'] = $image;
+        }
+        
+        echo '<script type="application/ld+json">' . "\n";
+        echo wp_json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) . "\n";
+        echo '</script>' . "\n";
+    }
+    
+    /**
+     * AJAX handler for generating SEO content
+     */
+    public function ajax_generate_seo() {
+        check_ajax_referer('ai_seo_nonce', 'nonce');
+        
+        if (!current_user_can('edit_posts')) {
+            wp_send_json_error(array('message' => __('Permission denied.', 'ai-seo-agent')));
+        }
+        
+        $post_id = isset($_POST['post_id']) ? absint($_POST['post_id']) : 0;
+        $field = isset($_POST['field']) ? sanitize_key($_POST['field']) : 'description';
+        
+        if (!$post_id) {
+            wp_send_json_error(array('message' => __('Invalid post ID.', 'ai-seo-agent')));
+        }
+        
+        $result = $this->generate_seo_content($post_id, $field);
+        
+        if ($result) {
+            wp_send_json_success(array('content' => $result));
+        } else {
+            wp_send_json_error(array('message' => __('Failed to generate content. Check your API key and rate limits.', 'ai-seo-agent')));
+        }
+    }
+    
+    /**
+     * Generate SEO content using AI
+     */
+    private function generate_seo_content($post_id, $field = 'description') {
+        // Check rate limit
+        if (!$this->check_rate_limit()) {
+            $this->log_activity('generate', 'Rate limit exceeded', 'error');
+            return false;
+        }
+        
+        $post = get_post($post_id);
+        if (!$post) {
+            return false;
+        }
+        
+        $api_key = $this->settings['api_key'];
+        if (empty($api_key)) {
+            return false;
+        }
+        
+        // Generate based on field type
+        $results = array();
+        
+        if ($field === 'all' || $field === 'title') {
+            $title = $this->call_ai_api(
+                "Write a concise, SEO-optimized title tag (max 60 characters) for this content:\n\nTitle: {$post->post_title}\n\nContent excerpt: " . wp_trim_words($post->post_content, 100),
+                'title'
+            );
+            
+            if ($title) {
+                update_post_meta($post_id, '_seo_title', $title);
+                $results['title'] = $title;
+            }
+        }
+        
+        if ($field === 'all' || $field === 'description') {
+            $description = $this->call_ai_api(
+                "Write a compelling meta description (150-160 characters) for this content:\n\nTitle: {$post->post_title}\n\nContent excerpt: " . wp_trim_words($post->post_content, 100),
+                'description'
+            );
+            
+            if ($description) {
+                update_post_meta($post_id, '_seo_description', $description);
+                $results['description'] = $description;
+            }
+        }
+        
+        if ($field === 'all' || $field === 'keywords') {
+            $keywords = $this->call_ai_api(
+                "Generate 5-7 relevant SEO keywords (comma-separated) for this content:\n\nTitle: {$post->post_title}\n\nContent excerpt: " . wp_trim_words($post->post_content, 100),
+                'keywords'
+            );
+            
+            if ($keywords) {
+                update_post_meta($post_id, '_seo_keywords', $keywords);
+                $results['keywords'] = $keywords;
+            }
+        }
+        
+        // Update optimization timestamp
+        if (!empty($results)) {
+            update_post_meta($post_id, '_seo_optimized_date', time());
+            $this->increment_api_usage();
+            $this->log_activity('generate', "Optimized post: {$post->post_title}", 'success');
+        }
+        
+        return $field === 'all' ? $results : ($results[$field] ?? false);
+    }
+    
+    /**
+     * Call OpenAI API
+     */
+    private function call_ai_api($prompt, $type = 'description') {
+        $api_key = $this->settings['api_key'];
+        $model = $this->settings['api_model'];
+        
+        // Adjust system message based on type
+        $system_messages = array(
+            'title' => 'You are an SEO expert. Generate only the title tag text, nothing else. Keep it under 60 characters.',
+            'description' => 'You are an SEO expert. Generate only the meta description text, nothing else. Keep it between 150-160 characters.',
+            'keywords' => 'You are an SEO expert. Generate only comma-separated keywords, nothing else. Provide 5-7 keywords.',
+        );
+        
+        $system_message = $system_messages[$type] ?? $system_messages['description'];
+        
+        $data = array(
+            'model' => $model,
+            'messages' => array(
+                array(
+                    'role' => 'system',
+                    'content' => $system_message,
+                ),
+                array(
+                    'role' => 'user',
+                    'content' => $prompt,
+                ),
+            ),
+            'max_tokens' => 150,
+            'temperature' => 0.7,
+        );
+        
+        $response = wp_remote_post('https://api.openai.com/v1/chat/completions', array(
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $api_key,
+                'Content-Type' => 'application/json',
+            ),
+            'body' => wp_json_encode($data),
+            'timeout' => 30,
+        ));
+        
+        if (is_wp_error($response)) {
+            $this->log_activity('api_call', 'API Error: ' . $response->get_error_message(), 'error');
+            return false;
+        }
+        
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+        
+        if (isset($body['error'])) {
+            $this->log_activity('api_call', 'API Error: ' . $body['error']['message'], 'error');
+            return false;
+        }
+        
+        if (!isset($body['choices'][0]['message']['content'])) {
+            return false;
+        }
+        
+        $content = trim($body['choices'][0]['message']['content']);
+        
+        // Remove quotes if present
+        $content = trim($content, '"\'');
+        
+        return $content;
+    }
+    
+    /**
+     * Check rate limit
+     */
+    private function check_rate_limit() {
+        $limit = $this->settings['rate_limit'];
+        $usage = get_transient('ai_seo_daily_usage');
+        
+        if ($usage === false) {
+            $usage = 0;
+        }
+        
+        return $usage < $limit;
+    }
+    
+    /**
+     * Increment API usage counter
+     */
+    private function increment_api_usage() {
+        $usage = get_transient('ai_seo_daily_usage');
+        
+        if ($usage === false) {
+            $usage = 0;
+        }
+        
+        $usage++;
+        set_transient('ai_seo_daily_usage', $usage, DAY_IN_SECONDS);
+    }
+    
+    /**
+     * Get statistics
+     */
+    private function get_statistics() {
+        $post_types = $this->settings['supported_post_types'];
+        
+        $total_query = new WP_Query(array(
+            'post_type' => $post_types,
+            'post_status' => 'publish',
+            'posts_per_page' => -1,
+            'fields' => 'ids',
+        ));
+        
+        $total_posts = $total_query->post_count;
+        
+        $optimized_query = new WP_Query(array(
+            'post_type' => $post_types,
+            'post_status' => 'publish',
+            'posts_per_page' => -1,
+            'fields' => 'ids',
+            'meta_query' => array(
+                array(
+                    'key' => '_seo_description',
+                    'compare' => 'EXISTS',
+                ),
+            ),
+        ));
+        
+        $optimized_posts = $optimized_query->post_count;
+        $needs_optimization = $total_posts - $optimized_posts;
+        $percentage = $total_posts > 0 ? round(($optimized_posts / $total_posts) * 100) : 0;
+        
+        $api_calls_today = get_transient('ai_seo_daily_usage');
+        if ($api_calls_today === false) {
+            $api_calls_today = 0;
+        }
+        
+        return array(
+            'total_posts' => $total_posts,
+            'optimized_posts' => $optimized_posts,
+            'needs_optimization' => $needs_optimization,
+            'optimization_percentage' => $percentage,
+            'api_calls_today' => $api_calls_today,
+        );
+    }
+    
+    /**
+     * Get unoptimized posts
+     */
+    private function get_unoptimized_posts($limit = 10) {
+        $post_types = $this->settings['supported_post_types'];
+        
+        $query = new WP_Query(array(
+            'post_type' => $post_types,
+            'post_status' => 'publish',
+            'posts_per_page' => $limit,
+            'orderby' => 'date',
+            'order' => 'DESC',
+            'meta_query' => array(
+                array(
+                    'key' => '_seo_description',
+                    'compare' => 'NOT EXISTS',
+                ),
+            ),
+        ));
+        
+        return $query->posts;
+    }
+    
+    /**
+     * Log activity
+     */
+    private function log_activity($action, $details, $status = 'success') {
+        $log = get_option('ai_seo_activity_log', array());
+        
+        // Keep only last 100 entries
+        if (count($log) >= 100) {
+            array_shift($log);
+        }
+        
+        $log[] = array(
+            'timestamp' => time(),
+            'action' => $action,
+            'details' => $details,
+            'status' => $status,
+        );
+        
+        update_option('ai_seo_activity_log', $log);
+    }
+    
+    /**
+     * Get activity log
+     */
+    private function get_activity_log($limit = 50) {
+        $log = get_option('ai_seo_activity_log', array());
+        return array_slice(array_reverse($log), 0, $limit);
+    }
+    
+    /**
+     * Analyze keyword density
+     */
+    private function analyze_keyword_density($content) {
+        // Strip HTML and decode entities
+        $text = wp_strip_all_tags($content);
+        $text = html_entity_decode($text, ENT_QUOTES, 'UTF-8');
+        
+        // Convert to lowercase
+        $text = strtolower($text);
+        
+        // Remove punctuation
+        $text = preg_replace('/[^\w\s]/', ' ', $text);
+        
+        // Split into words
+        $words = preg_split('/\s+/', $text, -1, PREG_SPLIT_NO_EMPTY);
+        
+        // Common stop words to filter
+        $stop_words = array('the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'as', 'by', 'is', 'was', 'are', 'were', 'been', 'be', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'what', 'which', 'who', 'when', 'where', 'why', 'how');
+        
+        // Filter out stop words and count
+        $keywords = array();
+        foreach ($words as $word) {
+            if (strlen($word) > 3 && !in_array($word, $stop_words)) {
+                if (!isset($keywords[$word])) {
+                    $keywords[$word] = 0;
+                }
+                $keywords[$word]++;
+            }
+        }
+        
+        // Sort by frequency
+        arsort($keywords);
+        
+        return $keywords;
+    }
+    
+    /**
+     * Register bulk actions
+     */
+    public function register_bulk_actions($bulk_actions) {
+        $bulk_actions['ai_seo_optimize'] = __('Optimize with AI SEO', 'ai-seo-agent');
+        return $bulk_actions;
+    }
+    
+    /**
+     * Handle bulk actions
+     */
+    public function handle_bulk_actions($redirect_to, $action, $post_ids) {
+        if ($action !== 'ai_seo_optimize') {
+            return $redirect_to;
+        }
+        
+        $optimized = 0;
+        foreach ($post_ids as $post_id) {
+            if ($this->check_rate_limit()) {
+                $result = $this->generate_seo_content($post_id, 'all');
+                if ($result) {
+                    $optimized++;
+                }
+            } else {
+                break;
+            }
+        }
+        
+        $redirect_to = add_query_arg('ai_seo_optimized', $optimized, $redirect_to);
+        return $redirect_to;
+    }
+    
+    /**
+     * Display bulk action notices
+     */
+    public function bulk_action_notices() {
+        if (!empty($_REQUEST['ai_seo_optimized'])) {
+            $optimized = intval($_REQUEST['ai_seo_optimized']);
+            printf(
+                '<div class="notice notice-success is-dismissible"><p>%s</p></div>',
+                esc_html(sprintf(_n('%d post optimized with AI.', '%d posts optimized with AI.', $optimized, 'ai-seo-agent'), $optimized))
+            );
+        }
+    }
+    
+    /**
+     * Process scheduled optimization (cron job)
+     */
+    public function process_scheduled_optimization() {
+        if (!$this->settings['auto_generate']) {
+            return;
+        }
+        
+        $posts = $this->get_unoptimized_posts(5);
+        
+        foreach ($posts as $post) {
+            if (!$this->check_rate_limit()) {
+                break;
+            }
+            
+            $this->generate_seo_content($post->ID, 'all');
+            
+            // Small delay to avoid hitting rate limits
+            sleep(1);
+        }
+        
+        $this->log_activity('scheduled_task', sprintf(__('Processed %d posts', 'ai-seo-agent'), count($posts)), 'success');
+    }
+    
+    /**
+     * Plugin activation
+     */
+    public static function activate() {
+        // Schedule cron job
+        if (!wp_next_scheduled('ai_seo_daily_optimization')) {
+            wp_schedule_event(time(), 'daily', 'ai_seo_daily_optimization');
+        }
+        
+        // Set default options
+        $defaults = array(
+            'api_key' => '',
+            'auto_generate' => false,
+            'supported_post_types' => array('post', 'page'),
+            'api_model' => 'gpt-3.5-turbo',
+            'rate_limit' => 50,
+            'enable_open_graph' => true,
+            'enable_schema' => true,
+        );
+        
+        add_option('ai_seo_settings', $defaults);
+    }
+    
+    /**
+     * Plugin deactivation
+     */
+    public static function deactivate() {
+        // Clear scheduled tasks
+        wp_clear_scheduled_hook('ai_seo_daily_optimization');
+        
+        // Clear transients
+        delete_transient('ai_seo_daily_usage');
+    }
+    
+    /**
+     * Plugin uninstall
+     */
+    public static function uninstall() {
+        // Remove options
+        delete_option('ai_seo_settings');
+        delete_option('ai_seo_activity_log');
+        
+        // Remove all post meta
+        global $wpdb;
+        $wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE meta_key LIKE '_seo_%'");
+        
+        // Clear transients
+        delete_transient('ai_seo_daily_usage');
+    }
+}
+
+// Initialize plugin
+function ai_seo_agent_init() {
+    return AI_SEO_Agent_Plugin::get_instance();
+}
+
+// Hook into WordPress
+add_action('plugins_loaded', 'ai_seo_agent_init');
+
+// Activation and deactivation hooks
+register_activation_hook(__FILE__, array('AI_SEO_Agent_Plugin', 'activate'));
+register_deactivation_hook(__FILE__, array('AI_SEO_Agent_Plugin', 'deactivate'));
+
+// Uninstall hook (must be in main file)
+if (function_exists('register_uninstall_hook')) {
+    register_uninstall_hook(__FILE__, array('AI_SEO_Agent_Plugin', 'uninstall'));
+}
